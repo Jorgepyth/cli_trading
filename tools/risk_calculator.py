@@ -1,0 +1,72 @@
+class RiskCalculator:
+    def __init__(self, fee_rate=0.0004):
+        """
+        Initializes the Risk Calculator. 
+        fee_rate defaults to 0.04% (Taker fee on Binance Futures roughly).
+        """
+        self.fee_rate = fee_rate
+
+    def calculate_pre_flight_risk(self, order_data, account_equity, mark_price):
+        """
+        Calculates expected PnL and risk percentages before order execution.
+        Returns a dictionary matching the Pre-Flight Data Schema.
+        """
+        # Note: This is a simplified calculation for standard contracts
+        # In actual production, it must account for exact lot sizes and multiplier
+        
+        symbol = order_data.get('symbol', 'BTCUSDT')
+        side = order_data.get('side', 'BUY')
+        size_value = order_data.get('size_value', 0.0) # Assume this is USDT position size for simplicity in calculation here
+        tp_value = order_data.get('tp_value', 0.0)
+        sl_value = order_data.get('sl_value', 0.0)
+        
+        # Determine quantity based on USDT sizing
+        # Actually, size might be crypto amount or USDT amount. 
+        # Let's assume size_value is position size in USDT for simplicity of PnL math
+        position_size_usdt = size_value
+        quantity_asset = position_size_usdt / mark_price if mark_price > 0 else 0
+
+        # Fees on entry and exit (approximate based on position size)
+        estimated_trading_fees = (position_size_usdt * self.fee_rate) * 2 
+
+        # Potential PnL based on TP and SL
+        target_pnl = 0.0
+        risk_pnl = 0.0
+        
+        if side == 'BUY':
+            if tp_value > mark_price:
+                target_pnl = (tp_value - mark_price) * quantity_asset
+            if sl_value > 0 and sl_value < mark_price:
+                risk_pnl = (mark_price - sl_value) * quantity_asset
+        elif side == 'SELL':
+            if tp_value > 0 and tp_value < mark_price:
+                target_pnl = (mark_price - tp_value) * quantity_asset
+            if sl_value > mark_price:
+                risk_pnl = (sl_value - mark_price) * quantity_asset
+
+        net_pnl_expected = target_pnl - estimated_trading_fees
+        net_risk_exposure = risk_pnl + estimated_trading_fees
+
+        # Calculate equity at stake
+        risk_pct_equity_at_stake = (net_risk_exposure / account_equity * 100) if account_equity > 0 else 100.0
+
+        # Arbitrary safety limits for now (e.g. max 5% loss per trade)
+        valid_for_execution = True
+        reason = ""
+        
+        if risk_pct_equity_at_stake > 5.0:
+            valid_for_execution = False
+            reason = "Risk exceeds 5% of account equity"
+            
+        if net_risk_exposure > account_equity:
+            valid_for_execution = False
+            reason = "Risk exceeds total account equity"
+
+        return {
+            "gross_pnl_target": round(target_pnl, 2),
+            "estimated_trading_fees": round(estimated_trading_fees, 2),
+            "net_pnl_expected": round(net_pnl_expected, 2),
+            "risk_pct_equity_at_stake": round(risk_pct_equity_at_stake, 2),
+            "valid_for_execution": valid_for_execution,
+            "rejection_reason": reason
+        }
