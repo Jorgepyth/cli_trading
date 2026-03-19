@@ -54,6 +54,17 @@ class BinanceTradingClient:
             print(f"Error fetching mark price: {e}")
             return 0.0
             
+    def get_leverage(self, symbol):
+        """Fetches the current leverage for a given symbol."""
+        try:
+            positions = self.client.futures_position_information(symbol=symbol)
+            if positions:
+                return int(positions[0]['leverage'])
+            return None
+        except BinanceAPIException as e:
+            print(f"Error fetching leverage: {e}")
+            return None
+
     def get_open_positions(self):
         """Fetches all currently open positions with non-zero amounts."""
         try:
@@ -90,6 +101,8 @@ class BinanceTradingClient:
                 params['reduceOnly'] = "true"
             if price and order_type in ['LIMIT', 'STOP', 'TAKE_PROFIT']:
                 params['price'] = price
+            if order_type == 'LIMIT':
+                params['timeInForce'] = 'GTC'  # Binance Futures requires this for LIMIT orders
             if stop_price and order_type in ['STOP_MARKET', 'TAKE_PROFIT_MARKET', 'STOP', 'TAKE_PROFIT']:
                 params['stopPrice'] = stop_price
                 

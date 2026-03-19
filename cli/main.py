@@ -59,7 +59,7 @@ def run_cli(prod):
             
         elif choice == '2':
             # Interactive Data Collection
-            order_data = InteractivePrompter.collect_order_details()
+            order_data = InteractivePrompter.collect_order_details(trading_client)
             
             console.print("\n[bold yellow]Fetching current mark price...[/bold yellow]")
             mark_price = trading_client.get_mark_price(order_data['symbol'])
@@ -68,7 +68,10 @@ def run_cli(prod):
                  console.print("[bold red]Error: Mark price could not be retrieved. Aborting.[/bold red]")
                  continue
                  
-            risk_analysis = risk_calc.calculate_pre_flight_risk(order_data, balance, mark_price)
+            # Use limit_price as entry price for LIMIT orders, mark_price for MARKET
+            entry_price = order_data.get('limit_price') or mark_price
+            
+            risk_analysis = risk_calc.calculate_pre_flight_risk(order_data, balance, entry_price)
             
             # Display Risk Table
             risk_table = Table(title="Pre-Flight Validation")
@@ -76,7 +79,8 @@ def run_cli(prod):
             risk_table.add_column("Value", style="magenta")
             
             risk_table.add_row("Symbol & Side", f"{order_data['symbol']} {order_data['side']}")
-            risk_table.add_row("Entry Mark Price", str(mark_price))
+            risk_table.add_row("Order Type", order_data['order_type'])
+            risk_table.add_row("Entry Price", str(entry_price) + (" (LIMIT)" if order_data['order_type'] == 'LIMIT' else " (Mark)"))
             risk_table.add_row("Order Size (USDT)", str(order_data['size_value']))
             risk_table.add_row("Target Gross PnL", str(risk_analysis['gross_pnl_target']))
             risk_table.add_row("Estimated Fees", str(risk_analysis['estimated_trading_fees']))
@@ -97,13 +101,14 @@ def run_cli(prod):
 
             if confirm:
                 console.print("[bold green]Executing Trade...[/bold green]")
-                quantity = round(order_data['size_value'] / mark_price, 3) 
+                quantity = round(order_data['size_value'] / entry_price, 3)
                 
                 response = trading_client.execute_futures_order(
                     symbol=order_data['symbol'],
                     side=order_data['side'],
                     order_type=order_data['order_type'],
-                    quantity=quantity
+                    quantity=quantity,
+                    price=order_data.get('limit_price')  # None for MARKET, set for LIMIT
                 )
                 
                 if response:

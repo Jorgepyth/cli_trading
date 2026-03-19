@@ -7,16 +7,34 @@ console = Console()
 
 class InteractivePrompter:
     @staticmethod
-    def collect_order_details():
+    def collect_order_details(trading_client=None):
         """
         Interactive flow to gather order schema details.
         Matches the Order Request Schema from Protocol 0.
         """
         order_data = {}
         
-        order_data['symbol'] = Prompt.ask("Symbol", default="BTCUSDT").upper()
+        # Change 1: Show supported symbol options
+        console.print("\n[bold]Available Symbols:[/bold] BTCUSDT, XAUUSDT")
+        order_data['symbol'] = Prompt.ask("Symbol", choices=["BTCUSDT", "XAUUSDT"], default="BTCUSDT").upper()
         order_data['order_type'] = Prompt.ask("Order Type", choices=["MARKET", "LIMIT"], default="MARKET").upper()
         order_data['side'] = Prompt.ask("Side", choices=["BUY", "SELL"], default="BUY").upper()
+        
+        # Ask for limit price if LIMIT order is selected
+        if order_data['order_type'] == 'LIMIT':
+            console.print("[bold yellow]LIMIT order selected — you must specify the exact price at which to fill.[/bold yellow]")
+            order_data['limit_price'] = float(Prompt.ask("Limit Price (USDT)"))
+        else:
+            order_data['limit_price'] = None
+        
+        # Change 2: Fetch and display current leverage before asking for confirmation
+        if trading_client:
+            console.print("\n[bold yellow]Fetching current leverage from exchange...[/bold yellow]")
+            current_leverage = trading_client.get_leverage(order_data['symbol'])
+            if current_leverage:
+                console.print(f"  Current leverage for [cyan]{order_data['symbol']}[/cyan]: [bold magenta]{current_leverage}x[/bold magenta]")
+            else:
+                console.print("  [yellow]Could not fetch current leverage.[/yellow]")
         order_data['leverage_confirmed'] = Confirm.ask("Is your leverage already set correctly on the exchange?")
         
         if not order_data['leverage_confirmed']:
@@ -26,10 +44,18 @@ class InteractivePrompter:
         order_data['size_type'] = Prompt.ask("Size Type", choices=["USDT", "ASSET"], default="USDT").upper()
         order_data['size_value'] = float(Prompt.ask("Size Value"))
         
-        order_data['tp_sl_type'] = Prompt.ask("Take-Profit / Stop-Loss Type", choices=["PRICE"], default="PRICE").upper()
+        # Change 3: Show all TP/SL type options (PRICE and PNL)
+        console.print("\n[bold]TP/SL Types:[/bold]")
+        console.print("  [cyan]PRICE[/cyan] - Set Take Profit and Stop Loss as exact price levels")
+        console.print("  [cyan]PNL[/cyan]   - Set Take Profit and Stop Loss as target PnL amounts in USDT")
+        order_data['tp_sl_type'] = Prompt.ask("Take-Profit / Stop-Loss Type", choices=["PRICE", "PNL"], default="PRICE").upper()
         
-        order_data['tp_value'] = float(Prompt.ask("Take Profit Price", default="0.0"))
-        order_data['sl_value'] = float(Prompt.ask("Stop Loss Price", default="0.0"))
+        if order_data['tp_sl_type'] == 'PRICE':
+            order_data['tp_value'] = float(Prompt.ask("Take Profit Price", default="0.0"))
+            order_data['sl_value'] = float(Prompt.ask("Stop Loss Price", default="0.0"))
+        else:  # PNL
+            order_data['tp_value'] = float(Prompt.ask("Take Profit Target (USDT PnL)", default="0.0"))
+            order_data['sl_value'] = float(Prompt.ask("Stop Loss Limit (USDT PnL)", default="0.0"))
         
         return order_data
         
