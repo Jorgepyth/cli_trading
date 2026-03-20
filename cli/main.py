@@ -121,33 +121,59 @@ def run_cli(prod):
                 
         elif choice == '3':
             positions = trading_client.get_open_positions()
-            symbol_to_close = InteractivePrompter.prompt_close_trade(positions)
+            orders = trading_client.get_open_orders()
             
-            if symbol_to_close:
-                # Find position details
-                pos_to_close = next((p for p in positions if p['symbol'] == symbol_to_close), None)
-                if pos_to_close:
-                    amount = abs(pos_to_close['amount'])
-                    side = "SELL" if pos_to_close['amount'] > 0 else "BUY"
-                    
-                    console.print(f"[bold yellow]Closing position for {symbol_to_close} with MARKET {side} of {amount}[/bold yellow]")
-                    confirm = click.confirm("Confirm closing this position?")
-                    
-                    if confirm:
-                        response = trading_client.execute_futures_order(
-                            symbol=symbol_to_close,
-                            side=side,
-                            order_type="MARKET",
-                            quantity=amount,
-                            reduce_only=True
-                        )
-                        if response:
-                             console.print(f"[bold green]Successfully closed position! Response ID: {response.get('orderId')}[/bold green]")
-                             balance = trading_client.get_account_balance()
+            # Show the dashboard first so they know what to pick
+            InteractivePrompter.display_status_dashboard(trading_client)
+            
+            selection = InteractivePrompter.prompt_close_or_cancel(positions, orders)
+            
+            if selection:
+                action_type, target = selection
+                
+                if action_type == "POSITION":
+                    symbol_to_close = target
+                    pos_to_close = next((p for p in positions if p['symbol'] == symbol_to_close), None)
+                    if pos_to_close:
+                        amount = abs(pos_to_close['amount'])
+                        side = "SELL" if pos_to_close['amount'] > 0 else "BUY"
+                        
+                        console.print(f"[bold yellow]Closing position for {symbol_to_close} with MARKET {side} of {amount}[/bold yellow]")
+                        confirm = click.confirm("Confirm closing this position?")
+                        
+                        if confirm:
+                            response = trading_client.execute_futures_order(
+                                symbol=symbol_to_close,
+                                side=side,
+                                order_type="MARKET",
+                                quantity=amount,
+                                reduce_only=True
+                            )
+                            if response:
+                                 console.print(f"[bold green]Successfully closed position! Response ID: {response.get('orderId')}[/bold green]")
+                                 balance = trading_client.get_account_balance()
+                            else:
+                                 console.print("[bold red]Failed to close position.[/bold red]")
                         else:
-                             console.print("[bold red]Failed to close position.[/bold red]")
-                    else:
-                        console.print("[yellow]Close cancelled.[/yellow]")
+                            console.print("[yellow]Close cancelled.[/yellow]")
+                            
+                elif action_type == "ORDER":
+                    order_id = int(target)
+                    ord_to_cancel = next((o for o in orders if o['orderId'] == order_id), None)
+                    if ord_to_cancel:
+                        symbol = ord_to_cancel['symbol']
+                        console.print(f"[bold yellow]Cancelling order {order_id} for {symbol}[/bold yellow]")
+                        confirm = click.confirm("Confirm cancelling this order?")
+                        
+                        if confirm:
+                            response = trading_client.cancel_order(symbol=symbol, order_id=order_id)
+                            # response usually contains {'clientOrderId': '...', 'cumQty': '0', 'cumQuote': '0', 'executedQty': '0', 'orderId': ..., 'origQty': '...', 'price': '...', 'reduceOnly': False, 'side': '...', 'status': 'CANCELED', ...}
+                            if response and response.get('status') == 'CANCELED':
+                                console.print(f"[bold green]Successfully cancelled order! Response ID: {response.get('orderId')}[/bold green]")
+                            else:
+                                console.print("[bold red]Failed to cancel order.[/bold red]")
+                        else:
+                            console.print("[yellow]Cancel cancelled.[/yellow]")
                         
         elif choice == '4':
             console.print("[bold green]Exiting B.L.A.S.T Terminal. Goodbye![/bold green]")

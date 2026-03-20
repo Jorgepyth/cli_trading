@@ -16,15 +16,35 @@ class RiskCalculator:
         
         symbol = order_data.get('symbol', 'BTCUSDT')
         side = order_data.get('side', 'BUY')
-        size_value = order_data.get('size_value', 0.0) # Assume this is USDT position size for simplicity in calculation here
+        size_type = order_data.get('size_type', 'USDT')
+        size_value = order_data.get('size_value', 0.0)
+        tp_sl_type = order_data.get('tp_sl_type', 'PRICE')
         tp_value = order_data.get('tp_value', 0.0)
         sl_value = order_data.get('sl_value', 0.0)
         
-        # Determine quantity based on USDT sizing
-        # Actually, size might be crypto amount or USDT amount. 
-        # Let's assume size_value is position size in USDT for simplicity of PnL math
-        position_size_usdt = size_value
-        quantity_asset = position_size_usdt / mark_price if mark_price > 0 else 0
+        if size_type == 'ASSET':
+            quantity_asset = size_value
+            position_size_usdt = quantity_asset * mark_price
+        else:
+            position_size_usdt = size_value
+            quantity_asset = position_size_usdt / mark_price if mark_price > 0 else 0
+
+        if tp_sl_type == 'PNL' and quantity_asset > 0:
+            target_tp_pnl = tp_value
+            target_sl_pnl = sl_value
+            
+            if side == 'BUY':
+                tp_price = mark_price + (target_tp_pnl / quantity_asset) if target_tp_pnl > 0 else 0
+                sl_price = mark_price - (target_sl_pnl / quantity_asset) if target_sl_pnl > 0 else 0
+            else: # SELL
+                tp_price = mark_price - (target_tp_pnl / quantity_asset) if target_tp_pnl > 0 else 0
+                sl_price = mark_price + (target_sl_pnl / quantity_asset) if target_sl_pnl > 0 else 0
+                
+            tp_value = max(0, tp_price)
+            sl_value = max(0, sl_price)
+            # Update order_data so converted values can be used downstream if needed
+            order_data['tp_value'] = round(tp_value, 2)
+            order_data['sl_value'] = round(sl_value, 2)
 
         # Fees on entry and exit (approximate based on position size)
         estimated_trading_fees = (position_size_usdt * self.fee_rate) * 2 

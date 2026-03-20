@@ -64,52 +64,95 @@ class InteractivePrompter:
         """Fetches and displays account balance and open positions."""
         balance = client.get_account_balance()
         positions = client.get_open_positions()
+        orders = client.get_open_orders()
         
         console.print(f"\n[bold cyan]Account Balance:[/bold cyan] {balance:.2f} USDT\n")
         
         if not positions:
             console.print("[yellow]No open positions found.[/yellow]")
-            return
+        else:
+            table = Table(title="Open Positions", style="blue")
+            table.add_column("Symbol", style="cyan", no_wrap=True)
+            table.add_column("Size", style="magenta")
+            table.add_column("Entry Price", style="green")
+            table.add_column("Mark Price", style="yellow")
+            table.add_column("Margin/Leverage", style="blue")
+            table.add_column("Unrealized PnL", justify="right")
             
-        table = Table(title="Open Positions", style="blue")
-        table.add_column("Symbol", style="cyan", no_wrap=True)
-        table.add_column("Size", style="magenta")
-        table.add_column("Entry Price", style="green")
-        table.add_column("Mark Price", style="yellow")
-        table.add_column("Margin/Leverage", style="blue")
-        table.add_column("Unrealized PnL", justify="right")
-        
-        for pos in positions:
-            pnl_color = "green" if pos['unRealizedProfit'] >= 0 else "red"
-            size_color = "green" if pos['amount'] > 0 else "red"
-            table.add_row(
-                pos['symbol'],
-                f"[{size_color}]{pos['amount']}[/{size_color}]",
-                f"{pos['entryPrice']:.2f}",
-                f"{pos['markPrice']:.2f}",
-                f"{pos['marginType'].upper()} {pos['leverage']}x",
-                f"[{pnl_color}]{pos['unRealizedProfit']:.2f}[/{pnl_color}]"
-            )
+            for pos in positions:
+                pnl_color = "green" if pos['unRealizedProfit'] >= 0 else "red"
+                size_color = "green" if pos['amount'] > 0 else "red"
+                table.add_row(
+                    pos['symbol'],
+                    f"[{size_color}]{pos['amount']}[/{size_color}]",
+                    f"{pos['entryPrice']:.2f}",
+                    f"{pos['markPrice']:.2f}",
+                    f"{pos['marginType'].upper()} {pos['leverage']}x",
+                    f"[{pnl_color}]{pos['unRealizedProfit']:.2f}[/{pnl_color}]"
+                )
+                
+            console.print(table)
             
-        console.print(table)
+        if not orders:
+            console.print("\n[yellow]No pending orders found.[/yellow]")
+        else:
+            console.print("") # spacing
+            orders_table = Table(title="Pending Orders", style="magenta")
+            orders_table.add_column("ID", style="cyan")
+            orders_table.add_column("Symbol", style="cyan", no_wrap=True)
+            orders_table.add_column("Type", style="yellow")
+            orders_table.add_column("Side", style="blue")
+            orders_table.add_column("Price/Stop", style="green")
+            orders_table.add_column("Quantity", style="magenta")
+            
+            for ord_data in orders:
+                side_color = "green" if ord_data['side'] == 'BUY' else "red"
+                price_str = str(ord_data['price'])
+                if ord_data['origType'] in ['STOP_MARKET', 'TAKE_PROFIT_MARKET', 'STOP', 'TAKE_PROFIT']:
+                    price_str = f"Stop: {ord_data.get('stopPrice', '0')}"
+                elif ord_data['origType'] == 'LIMIT':
+                    price_str = f"Limit: {ord_data.get('price', '0')}"
+                
+                orders_table.add_row(
+                    str(ord_data['orderId']),
+                    ord_data['symbol'],
+                    ord_data['origType'],
+                    f"[{side_color}]{ord_data['side']}[/{side_color}]",
+                    price_str,
+                    str(ord_data['origQty'])
+                )
+                
+            console.print(orders_table)
         
     @staticmethod
-    def prompt_close_trade(positions):
-        """Prompts the user to select an open position to close."""
-        if not positions:
-            console.print("[yellow]You have no open positions to close.[/yellow]")
+    def prompt_close_or_cancel(positions, orders):
+        """Prompts the user to select an open position to close or a pending order to cancel."""
+        if not positions and not orders:
+            console.print("[yellow]You have no open positions or pending orders to manage.[/yellow]")
             return None
             
-        choices = [pos['symbol'] for pos in positions]
+        choices = []
+        for pos in positions:
+            choices.append(f"POS_{pos['symbol']}")
+        for ord_data in orders:
+            choices.append(f"ORD_{ord_data['orderId']}")
+            
         choices.append("CANCEL")
         
-        symbol_to_close = Prompt.ask(
-            "\n[bold yellow]Select symbol to close completely (MARKET)[/bold yellow]",
+        prompt_text = "\n[bold yellow]Select a position to close (POS_<Symbol>) or an order to cancel (ORD_<ID>)[/bold yellow]"
+        
+        selection = Prompt.ask(
+            prompt_text,
             choices=choices,
             default="CANCEL"
         )
         
-        if symbol_to_close == "CANCEL":
+        if selection == "CANCEL":
             return None
             
-        return symbol_to_close
+        if selection.startswith("POS_"):
+            return ("POSITION", selection.replace("POS_", ""))
+        elif selection.startswith("ORD_"):
+            return ("ORDER", selection.replace("ORD_", ""))
+            
+        return None

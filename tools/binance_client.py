@@ -86,6 +86,27 @@ class BinanceTradingClient:
             print(f"Error fetching open positions: {e}")
             return []
 
+    def get_open_orders(self, symbol=None):
+        """Fetches all currently open (pending) orders."""
+        try:
+            kwargs = {}
+            if symbol:
+                kwargs['symbol'] = symbol
+            orders = self.client.futures_get_open_orders(**kwargs)
+            return orders
+        except BinanceAPIException as e:
+            print(f"Error fetching open orders: {e}")
+            return []
+
+    def cancel_order(self, symbol, order_id):
+        """Cancels an existing active order."""
+        try:
+            response = self.client.futures_cancel_order(symbol=symbol, orderId=order_id)
+            return response
+        except BinanceAPIException as e:
+            print(f"Error cancelling order {order_id}: {e}")
+            return None
+
     def execute_futures_order(self, symbol, side, order_type, quantity, price=None, stop_price=None, reduce_only=False):
         """
         Executes a futures order. Currently supports basic execution.
