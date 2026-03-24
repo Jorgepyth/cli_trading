@@ -106,20 +106,23 @@ class InteractivePrompter:
             orders_table.add_column("Quantity", style="magenta")
             
             for ord_data in orders:
-                side_color = "green" if ord_data['side'] == 'BUY' else "red"
-                price_str = str(ord_data['price'])
-                if ord_data['origType'] in ['STOP_MARKET', 'TAKE_PROFIT_MARKET', 'STOP', 'TAKE_PROFIT']:
-                    price_str = f"Stop: {ord_data.get('stopPrice', '0')}"
-                elif ord_data['origType'] == 'LIMIT':
+                side_color = "green" if ord_data.get('side', '') == 'BUY' else "red"
+                price_str = str(ord_data.get('price', '0'))
+                
+                ord_type = ord_data.get('origType') or ord_data.get('type') or ord_data.get('orderType') or 'UNKNOWN'
+                
+                if ord_type in ['STOP_MARKET', 'TAKE_PROFIT_MARKET', 'STOP', 'TAKE_PROFIT']:
+                    price_str = f"Stop: {ord_data.get('stopPrice') or ord_data.get('triggerPrice') or '0'}"
+                elif ord_type == 'LIMIT':
                     price_str = f"Limit: {ord_data.get('price', '0')}"
                 
                 orders_table.add_row(
-                    str(ord_data['orderId']),
-                    ord_data['symbol'],
-                    ord_data['origType'],
-                    f"[{side_color}]{ord_data['side']}[/{side_color}]",
+                    str(ord_data.get('orderId', '')),
+                    ord_data.get('symbol', ''),
+                    ord_type,
+                    f"[{side_color}]{ord_data.get('side', '')}[/{side_color}]",
                     price_str,
-                    str(ord_data['origQty'])
+                    str(ord_data.get('origQty') or ord_data.get('quantity') or '')
                 )
                 
             console.print(orders_table)
