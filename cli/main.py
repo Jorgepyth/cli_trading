@@ -2,6 +2,9 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.align import Align
+from rich.prompt import Prompt, Confirm
+import rich.box
 
 from cli.auth import local_auth
 from cli.prompter import InteractivePrompter
@@ -14,15 +17,15 @@ console = Console()
 @click.option('--prod', is_flag=True, help='Run against Binance Production API instead of Testnet')
 def run_cli(prod):
     """
-    B.L.A.S.T. Terminal Interactive Trading CLI for Binance Futures.
+    Trading Terminal Interactive Trading CLI for Binance Futures.
     """
     # 1. Zero Trust - Local Auth
     if not local_auth():
-        console.print("[bold red]Authentication failed. Exiting.[/bold red]")
+        console.print("[bold #ff0055]Authentication failed. Exiting.[/bold #ff0055]")
         return
         
-    console.print(Panel("[bold green]B.L.A.S.T Terminal Authenticated.[/bold green]\n"
-                        "Environment: " + ("[bold red]PRODUCTION[/bold red]" if prod else "[bold yellow]TESTNET[/bold yellow]")))
+    console.print(Panel("[bold #00ff00]Trading Terminal Authenticated.[/bold #00ff00]\n"
+                        "Environment: " + ("[bold #ff0055]PRODUCTION[/bold #ff0055]" if prod else "[bold #aaaaaa]TESTNET[/bold #aaaaaa]")))
 
     # 2. Init Layer 3 atomic tools
     try:
@@ -44,15 +47,24 @@ def run_cli(prod):
 
     # Main Menu Loop
     while True:
-        console.print("\n" + "="*50, style="blue")
-        console.print("[bold cyan]B.L.A.S.T. TERMINAL - MAIN MENU[/bold cyan]")
-        console.print("="*50, style="blue")
-        console.print("1. View Status")
-        console.print("2. Open Trade")
-        console.print("3. Close Trade")
-        console.print("4. Exit\n")
+        console.print()
+        menu_text = (
+            "[#aaaaaa]1. View Status[/#aaaaaa]\n"
+            "[#aaaaaa]2. Open Trade[/#aaaaaa]\n"
+            "[#aaaaaa]3. Close Trade[/#aaaaaa]\n"
+            "[#aaaaaa]4. Trade History[/#aaaaaa]\n"
+            "[#aaaaaa]5. Exit[/#aaaaaa]"
+        )
+        menu_panel = Panel(
+            Align.center(menu_text),
+            title="[bold #00aaff]TRADING TERMINAL - MAIN MENU[/bold #00aaff]",
+            border_style="#00aaff",
+            expand=False
+        )
+        console.print(Align.center(menu_panel))
+        console.print()
         
-        choice = click.prompt("Select an action", type=click.Choice(['1', '2', '3', '4']))
+        choice = Prompt.ask("[#00aaff]❯[/#00aaff] Select action", choices=['1', '2', '3', '4', '5'])
         
         if choice == '1':
             InteractivePrompter.display_status_dashboard(trading_client)
@@ -78,35 +90,49 @@ def run_cli(prod):
             risk_analysis = risk_calc.calculate_pre_flight_risk(order_data, balance, entry_price)
             
             # Display Risk Table
-            risk_table = Table(title="Pre-Flight Validation")
-            risk_table.add_column("Metric", style="cyan")
-            risk_table.add_column("Value", style="magenta")
+            risk_table = Table(title="Pre-Flight Validation", box=rich.box.HEAVY)
+            risk_table.add_column("Metric", style="#00aaff")
+            risk_table.add_column("Value", style="#aaaaaa")
             
             risk_table.add_row("Symbol & Side", f"{order_data.get('symbol', 'N/A')} {order_data.get('side', 'N/A')}")
             risk_table.add_row("Order Type", order_data.get('order_type', 'N/A'))
             risk_table.add_row("Entry Price", str(entry_price) + (" (LIMIT)" if order_data.get('order_type') == 'LIMIT' else " (Mark)"))
             risk_table.add_row("Order Size (USDT)", str(order_data.get('size_value', 'N/A')))
+            
+            risk_table.add_section() # Separate Order Specs from Risk Metrics
+            
             risk_table.add_row("Target Gross PnL", str(risk_analysis.get('gross_pnl_target', 'N/A')))
             risk_table.add_row("Estimated Fees", str(risk_analysis.get('estimated_trading_fees', 'N/A')))
             risk_table.add_row("Net Expected PnL", str(risk_analysis.get('net_pnl_expected', 'N/A')))
-            risk_table.add_row("Estimated Loss", f"[bold red]{risk_analysis.get('net_loss_expected', 'N/A')}[/bold red]")
+            risk_table.add_row("Estimated Loss", f"[#ff0055]{risk_analysis.get('net_loss_expected', 'N/A')}[/#ff0055]")
             risk_pct = risk_analysis.get('risk_pct_equity_at_stake')
             risk_table.add_row("Risk as % of Equity", f"{risk_pct}%" if risk_pct is not None else "N/A")
-            risk_table.add_row("Valid for Execution", "[green]YES[/green]" if risk_analysis.get('valid_for_execution', False) else "[red]NO[/red]")
             
-            if not risk_analysis.get('valid_for_execution', False):
-                risk_table.add_row("Rejection Reason", f"[bold red]{risk_analysis.get('rejection_reason', 'N/A')}[/bold red]")
+            is_valid = risk_analysis.get('valid_for_execution', False)
+            valid_style = "none" if is_valid else "bold #ffffff on #ff0000"
+            risk_table.add_row(
+                "Valid for Execution", 
+                "[#00ff00]YES[/#00ff00]" if is_valid else "[#ffffff on #ff0000]NO[/#ffffff on #ff0000]",
+                style=valid_style
+            )
+            
+            if not is_valid:
+                risk_table.add_row(
+                    "Rejection Reason", 
+                    f"[#ffffff on #ff0000]{risk_analysis.get('rejection_reason', 'N/A')}[/#ffffff on #ff0000]", 
+                    style="bold #ffffff on #ff0000"
+                )
         
             console.print(risk_table)
 
             if not risk_analysis['valid_for_execution']:
-                console.print("[bold red]Execution BLOCKED based on risk constraints.[/bold red]")
+                console.print("[bold #ff0055]Execution BLOCKED based on risk constraints.[/bold #ff0055]")
                 continue
                 
-            confirm = click.confirm("\nAre you absolutely sure you want to execute this trade?")
+            confirm = Confirm.ask("\nAre you absolutely sure you want to execute this trade?")
 
             if confirm:
-                console.print("[bold green]Executing Trade...[/bold green]")
+                console.print("[bold #00ff00]Executing Trade...[/bold #00ff00]")
                 # 1. Base quantity derivation (Truncation logic is now natively evaluated by BinanceTradingClient)
                 if order_data.get('size_type') == 'ASSET':
                     quantity = order_data['size_value']
@@ -238,7 +264,10 @@ def run_cli(prod):
                             console.print("[yellow]Cancel cancelled.[/yellow]")
                         
         elif choice == '4':
-            console.print("[bold green]Exiting B.L.A.S.T Terminal. Goodbye![/bold green]")
+            InteractivePrompter.display_trade_history(trading_client)
+            
+        elif choice == '5':
+            console.print("[bold #00ff00]Exiting Trading Terminal. Goodbye![/bold #00ff00]")
             break
 
 

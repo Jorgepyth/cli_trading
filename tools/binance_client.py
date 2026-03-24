@@ -102,6 +102,17 @@ class BinanceTradingClient:
             print(f"Error fetching leverage: {e}")
             return None
 
+    def get_margin_type(self, symbol):
+        """Fetches the current margin type for a given symbol."""
+        try:
+            positions = self.client.futures_position_information(symbol=symbol)
+            if positions:
+                return positions[0]['marginType'].upper()
+            return None
+        except BinanceAPIException as e:
+            print(f"Error fetching margin type: {e}")
+            return None
+
     def get_open_positions(self):
         """Fetches all currently open positions with non-zero amounts."""
         try:
@@ -234,3 +245,11 @@ class BinanceTradingClient:
             else:
                 print(f"Error cancelling order {order_id}: {e}")
                 return None
+
+    def get_trade_history(self, symbol, limit=20):
+        """Fetches historical trades from the futures_account_trades endpoint."""
+        try:
+            return self.client.futures_account_trades(symbol=symbol, limit=limit)
+        except BinanceAPIException as e:
+            print(f"Error fetching trade history: {e}")
+            return []

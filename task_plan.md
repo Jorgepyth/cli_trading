@@ -3,8 +3,8 @@
 ## Phases
 - [x] **Phase 1: B - Blueprint** (Vision & Logic)
 - [x] **Phase 2: L - Link** (Connectivity & Environment)
-- [ ] **Phase 3: A - Architect** (The 3-Layer Build)
-- [ ] **Phase 4: S - Stylize** (Refinement & UI)
+- [x] **Phase 3: A - Architect** (The 3-Layer Build)
+- [x] **Phase 4: S - Stylize** (Refinement & UI)
 - [ ] **Phase 5: T - Trigger** (Deployment & Safety)
 
 ## Goals
@@ -26,12 +26,12 @@ Priority is determinism, human validation, and pre-execution risk calculation (T
 - [x] Log connections in `findings.md`.
 
 ### Phase 3: Architect (3-Layer Build)
-- [ ] Layer 1 (`architecture/`): SOPs for execution flow and risk validation.
-- [ ] Layer 2 (`cli` module): Interactive flow logic.
-- [ ] Layer 3 (`tools/`): Atomic Binance execution scripts.
+- [x] Layer 1 (`architecture/`): SOPs for execution flow and risk validation.
+- [x] Layer 2 (`cli` module): Interactive flow logic.
+- [x] Layer 3 (`tools/`): Atomic Binance execution scripts.
 
 ### Phase 4: Stylize (Refinement & UI)
-- [ ] Implement CLI interaction (Prompts, Tables, Auth Screen).
+- [x] Implement CLI interaction (Prompts, Tables, Auth Screen).
 
 ### Phase 5: Trigger (Deployment)
 - [ ] Test on Testnet.
