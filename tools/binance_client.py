@@ -18,14 +18,14 @@ class BinanceTradingClient:
         
         # Load appropriate keys based on environment toggle
         if use_testnet:
-            api_key = os.getenv("BINANCE_TESTNET_API_KEY")
-            api_secret = os.getenv("BINANCE_TESTNET_API_SECRET")
+            api_key = os.getenv("BINANCE_TESTNET_API_KEY", "").strip().strip("'").strip('"')
+            api_secret = os.getenv("BINANCE_TESTNET_API_SECRET", "").strip().strip("'").strip('"')
         else:
-            api_key = os.getenv("BINANCE_API_KEY")
-            api_secret = os.getenv("BINANCE_API_SECRET")
+            api_key = os.getenv("BINANCE_API_KEY", "").strip().strip("'").strip('"')
+            api_secret = os.getenv("BINANCE_API_SECRET", "").strip().strip("'").strip('"')
             
-        if not api_key or not api_secret:
-            raise ValueError("API Keys are missing from environment variables.")
+        if not api_key or not api_secret or api_key == "YOUR_MAINNET_API_KEY":
+            raise ValueError("API Keys are missing from environment variables or still set to defaults.")
 
         self.client = Client(api_key, api_secret, testnet=use_testnet)
         self.exchange_info = None
