@@ -52,14 +52,15 @@ class BinanceTradingClient:
 
     def format_precision(self, value, step, round_type="truncate"):
         """Formats value to the step interval. Supports truncate or round."""
-        import math
-        decimals = int(round(-math.log10(step))) if step < 1 else 0
-        factor = 10 ** decimals
+        from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+        
+        value_dec = Decimal(str(value))
+        step_dec = Decimal(str(step))
+        
         if round_type == "truncate":
-            # Strict truncation (floor instead of round up)
-            return math.floor(value * factor) / factor
+            return float(value_dec.quantize(step_dec, rounding=ROUND_DOWN))
         else:
-            return round(value, decimals)
+            return float(value_dec.quantize(step_dec, rounding=ROUND_HALF_UP))
         
     def ping(self):
         """Tests connectivity to the exchange."""
@@ -190,7 +191,7 @@ class BinanceTradingClient:
                     'X-MBX-APIKEY': api_key
                 }
                 
-                http_response = requests.post(endpoint_url, headers=headers)
+                http_response = requests.post(endpoint_url, headers=headers, timeout=5.0)
                 response = http_response.json()
                 
                 if http_response.status_code != 200:

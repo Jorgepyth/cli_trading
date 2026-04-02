@@ -158,6 +158,38 @@ def run_cli(prod):
                     # 3. Determinar el lado opuesto para las órdenes de salida
                     exit_side = "SELL" if order_data['side'] == "BUY" else "BUY"
                     
+                    # Verified Quantity Tracking
+                    import time
+                    executed_qty = float(response.get('executedQty', 0.0))
+                    original_qty = quantity
+                    
+                    # Rigid block checking FILLED status for LIMIT/unfilled orders
+                    if order_data['order_type'] == 'LIMIT' or executed_qty == 0.0:
+                        console.print("[yellow]Waiting for order fulfillment to route TP/SL...[/yellow]")
+                        max_polls = 10
+                        success_fill = False
+                        for poll in range(max_polls):
+                            time.sleep(2)
+                            open_positions = trading_client.get_open_positions()
+                            target_pos = next((p for p in open_positions if p['symbol'] == order_data['symbol']), None)
+                            if target_pos and abs(target_pos['amount']) >= (quantity * 0.9):
+                                console.print("[green]Confirmation: Position active.[/green]")
+                                executed_qty = abs(target_pos['amount'])
+                                success_fill = True
+                                break
+                                
+                        if not success_fill:
+                             console.print("[yellow]Timeout waiting for fill. Active LIMIT remains on the orderbook, but ABORTING TP/SL concurrent routing to prevent naked exposure.[/yellow]")
+                             continue
+                    elif executed_qty == 0.0 and order_data['order_type'] == 'MARKET':
+                        time.sleep(1)
+                        open_positions = trading_client.get_open_positions()
+                        target_pos = next((p for p in open_positions if p['symbol'] == order_data['symbol']), None)
+                        if target_pos:
+                            executed_qty = abs(target_pos['amount'])
+                    
+                    safe_quantity = executed_qty if executed_qty > 0.0 else original_qty
+                    
                     # 4. Enforce TP / SL Conditionals via strictly monitored Try/Except block
                     try:
                         tp_price = order_data.get('tp_value')
@@ -167,7 +199,7 @@ def run_cli(prod):
                                 symbol=order_data['symbol'],
                                 side=exit_side,
                                 order_type="TAKE_PROFIT_MARKET",
-                                quantity=quantity, 
+                                quantity=safe_quantity, 
                                 stop_price=tp_price,
                                 reduce_only=True # INVARIANTE DE SEGURIDAD CRÍTICO
                             )
@@ -182,7 +214,7 @@ def run_cli(prod):
                                 symbol=order_data['symbol'],
                                 side=exit_side,
                                 order_type="STOP_MARKET",
-                                quantity=quantity, 
+                                quantity=safe_quantity, 
                                 stop_price=sl_price,
                                 reduce_only=True # INVARIANTE DE SEGURIDAD CRÍTICO
                             )
@@ -192,14 +224,28 @@ def run_cli(prod):
                             
                     except Exception as e:
                         console.print(f"[bold red]CRITICAL FAULT: TP/SL routing failed ({e}). Position liquidated automatically to prevent exposure.[/bold red]")
-                        # Kill-Switch Trigger
-                        kill_response = trading_client.execute_futures_order(
-                            symbol=order_data['symbol'],
-                            side=exit_side,
-                            order_type="MARKET",
-                            quantity=quantity,
-                            reduce_only=False
-                        )
+                        # Kill-Switch Trigger with Exponential Backoff
+                        max_retries = 3
+                        for attempt in range(max_retries):
+                            try:
+                                kill_response = trading_client.execute_futures_order(
+                                    symbol=order_data['symbol'],
+                                    side=exit_side,
+                                    order_type="MARKET",
+                                    quantity=safe_quantity,
+                                    reduce_only=True # Explicitly True to prevent reversals
+                                )
+                                if kill_response:
+                                    console.print(f"[bold green]Kill-Switch successful on attempt {attempt+1}.[/bold green]")
+                                    break
+                                raise Exception("Empty response inside Kill-Switch API wrapper")
+                            except Exception as ke:
+                                if attempt < max_retries - 1:
+                                    sleep_time = 1.5 ** attempt
+                                    console.print(f"[yellow]Kill-Switch failure ({ke}). Retrying in {sleep_time:.2f}s...[/yellow]")
+                                    time.sleep(sleep_time)
+                                else:
+                                    console.print("[bold red]FATAL: Kill-Switch completely failed after max retries. Manual intervention REQUIRED.[/bold red]")
 
                     balance = trading_client.get_account_balance()
                 else:

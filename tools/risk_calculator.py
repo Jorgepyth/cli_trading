@@ -63,7 +63,10 @@ class RiskCalculator:
             return {"valid_for_execution": False, "rejection_reason": "Execution BLOCKED: Minimum notional value for Binance Futures is 5 USDT."}
 
         # Fees on entry and exit (approximate based on position size)
-        estimated_trading_fees = (position_size_usdt * self.fee_rate) * 2 
+        order_type_str = order_data.get('order_type', 'MARKET').upper()
+        entry_fee_rate = 0.0002 if order_type_str == 'LIMIT' else self.fee_rate
+        exit_fee_rate = self.fee_rate # Assuming conditional exit (TAKE_PROFIT_MARKET / STOP_MARKET)
+        estimated_trading_fees = (position_size_usdt * entry_fee_rate) + (position_size_usdt * exit_fee_rate)
 
         # Potential PnL based on TP and SL
         target_pnl = 0.0

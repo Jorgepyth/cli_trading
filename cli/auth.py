@@ -12,7 +12,7 @@ def local_auth():
     load_dotenv()
     
     # Normally, dev creates this hash manually and adds to .env
-    # e.g. python -c "import hashlib; print(hashlib.sha256('mypass'.encode()).hexdigest())"
+    # e.g. python -c "import hashlib, binascii; salt=b'blast_cli_salt'; key = hashlib.pbkdf2_hmac('sha256', 'mypass'.encode(), salt, 100000); print(binascii.hexlify(key).decode())"
     expected_hash = os.getenv("BLAST_DEV_PASSPHRASE_HASH")
     
     # If not set, let's allow it but warn, or we can strictly deny. Let's deny to be strict.
@@ -21,6 +21,16 @@ def local_auth():
         return False
         
     password = getpass("Developer Passphrase: ")
-    hashed_input = hashlib.sha256(password.encode()).hexdigest()
+    # Using a static salt for local CLI use-case; could be externalized to .env for max security
+    salt = b'blast_cli_salt'
+    key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
+    import binascii
+    hashed_input = binascii.hexlify(key).decode('utf-8')
+    
+    # For backwards compatibility during transition, check if the expected hash is a legacy weak sha256
+    # A standard sha256 hex digest is 64 chars. We will allow transition.
+    if len(expected_hash) == 64 and expected_hash == hashlib.sha256(password.encode()).hexdigest():
+        print("[WARNING] You are using an outdated legacy SHA-256 hash. Please update .env to use PBKDF2.")
+        return True
     
     return hashed_input == expected_hash
