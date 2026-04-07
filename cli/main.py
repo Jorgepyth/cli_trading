@@ -15,7 +15,8 @@ console = Console()
 
 @click.command()
 @click.option('--prod', is_flag=True, help='Run against Binance Production API instead of Testnet')
-def run_cli(prod):
+@click.option('--sub', is_flag=True, help='Run against Binance Sub-Account API on Production')
+def run_cli(prod, sub):
     """
     Trading Terminal Interactive Trading CLI for Binance Futures.
     """
@@ -24,12 +25,14 @@ def run_cli(prod):
         console.print("[bold #ff0055]Authentication failed. Exiting.[/bold #ff0055]")
         return
         
-    console.print(Panel("[bold #00ff00]Trading Terminal Authenticated.[/bold #00ff00]\n"
-                        "Environment: " + ("[bold #ff0055]PRODUCTION[/bold #ff0055]" if prod else "[bold #aaaaaa]TESTNET[/bold #aaaaaa]")))
+    env_str = "SUBACCOUNT" if sub else ("MAINNET" if prod else "TESTNET")
+    
+    console.print(Panel(f"[bold #00ff00]Trading Terminal Authenticated.[/bold #00ff00]\n"
+                        f"Environment: [bold #ff0055]{env_str}[/bold #ff0055]"))
 
     # 2. Init Layer 3 atomic tools
     try:
-        trading_client = BinanceTradingClient(use_testnet=not prod)
+        trading_client = BinanceTradingClient(env=env_str)
         risk_calc = RiskCalculator()
     except ValueError as e:
         console.print(f"[bold red]Configuration Error:[/bold red] {e}")
@@ -168,19 +171,22 @@ def run_cli(prod):
                         console.print("[yellow]Waiting for order fulfillment to route TP/SL...[/yellow]")
                         max_polls = 10
                         success_fill = False
-                        for poll in range(max_polls):
-                            time.sleep(2)
-                            open_positions = trading_client.get_open_positions()
-                            target_pos = next((p for p in open_positions if p['symbol'] == order_data['symbol']), None)
-                            if target_pos and abs(target_pos['amount']) >= (quantity * 0.9):
-                                console.print("[green]Confirmation: Position active.[/green]")
-                                executed_qty = abs(target_pos['amount'])
-                                success_fill = True
-                                break
-                                
-                        if not success_fill:
-                             console.print("[yellow]Timeout waiting for fill. Active LIMIT remains on the orderbook, but ABORTING TP/SL concurrent routing to prevent naked exposure.[/yellow]")
-                             continue
+                        try:
+                            for poll in range(max_polls):
+                                time.sleep(2)
+                                open_positions = trading_client.get_open_positions()
+                                target_pos = next((p for p in open_positions if p['symbol'] == order_data['symbol']), None)
+                                if target_pos and abs(target_pos['amount']) >= (quantity * 0.9):
+                                    console.print("[green]Confirmation: Position active.[/green]")
+                                    executed_qty = abs(target_pos['amount'])
+                                    success_fill = True
+                                    break
+                        finally:
+                            if not success_fill:
+                                 console.print("[yellow]Timeout or interrupt waiting for fill. Active LIMIT remains on the orderbook, but ABORTING TP/SL concurrent routing to prevent naked exposure.[/yellow]")
+                                 trading_client.cancel_order(order_data['symbol'], response.get('orderId'))
+                                 console.print("[yellow]Original LIMIT order explicitly cancelled.[/yellow]")
+                                 continue
                     elif executed_qty == 0.0 and order_data['order_type'] == 'MARKET':
                         time.sleep(1)
                         open_positions = trading_client.get_open_positions()
@@ -188,7 +194,13 @@ def run_cli(prod):
                         if target_pos:
                             executed_qty = abs(target_pos['amount'])
                     
-                    safe_quantity = executed_qty if executed_qty > 0.0 else original_qty
+                    if executed_qty <= 0.0:
+                        console.print("[bold red]CRITICAL: Unable to verify position Amt from exchange ledger. Halting to prevent desynchronization.[/bold red]")
+                        # Cancel the order just in case it's in a weird state
+                        trading_client.cancel_order(order_data['symbol'], response.get('orderId'))
+                        continue
+                    
+                    safe_quantity = executed_qty
                     
                     # 4. Enforce TP / SL Conditionals via strictly monitored Try/Except block
                     try:
@@ -225,6 +237,8 @@ def run_cli(prod):
                     except Exception as e:
                         console.print(f"[bold red]CRITICAL FAULT: TP/SL routing failed ({e}). Position liquidated automatically to prevent exposure.[/bold red]")
                         # Kill-Switch Trigger with Exponential Backoff
+                        console.print("[yellow]Cancelling all open orders to clear book before MARKET liquidation...[/yellow]")
+                        trading_client.cancel_all_open_orders(order_data['symbol'])
                         max_retries = 3
                         for attempt in range(max_retries):
                             try:
@@ -260,22 +274,26 @@ def run_cli(prod):
             # Show the dashboard first so they know what to pick
             InteractivePrompter.display_status_dashboard(trading_client)
             
-            selection = InteractivePrompter.prompt_close_or_cancel(positions, orders)
+            selections = InteractivePrompter.prompt_close_or_cancel(positions, orders)
             
-            if selection:
-                action_type, target = selection
+            if selections:
+                console.print(f"\n[bold yellow]You have selected {len(selections)} action(s) to execute.[/bold yellow]")
+                confirm = Confirm.ask("Execute all these closing actions now?")
                 
-                if action_type == "POSITION":
-                    symbol_to_close = target
-                    pos_to_close = next((p for p in positions if p['symbol'] == symbol_to_close), None)
-                    if pos_to_close:
-                        amount = abs(pos_to_close['amount'])
-                        side = "SELL" if pos_to_close['amount'] > 0 else "BUY"
-                        
-                        console.print(f"[bold yellow]Closing position for {symbol_to_close} with MARKET {side} of {amount}[/bold yellow]")
-                        confirm = click.confirm("Confirm closing this position?")
-                        
-                        if confirm:
+                if not confirm:
+                    console.print("[yellow]Batch execution cancelled.[/yellow]")
+                    continue
+                    
+                for action_type, target in selections:
+                    if action_type == "POSITION":
+                        symbol_to_close = target
+                        pos_to_close = next((p for p in positions if p['symbol'] == symbol_to_close), None)
+                        if pos_to_close:
+                            amount = abs(pos_to_close['amount'])
+                            side = "SELL" if pos_to_close['amount'] > 0 else "BUY"
+                            
+                            console.print(f"[bold yellow]Closing position for {symbol_to_close} with MARKET {side} of {amount}...[/bold yellow]")
+                            
                             response = trading_client.execute_futures_order(
                                 symbol=symbol_to_close,
                                 side=side,
@@ -285,29 +303,25 @@ def run_cli(prod):
                             )
                             if response:
                                  console.print(f"[bold green]Successfully closed position! Response ID: {response.get('orderId')}[/bold green]")
-                                 balance = trading_client.get_account_balance()
                             else:
                                  console.print("[bold red]Failed to close position.[/bold red]")
-                        else:
-                            console.print("[yellow]Close cancelled.[/yellow]")
+                                 
+                    elif action_type == "ORDER":
+                        order_id = int(target)
+                        ord_to_cancel = next((o for o in orders if o['orderId'] == order_id), None)
+                        if ord_to_cancel:
+                            symbol = ord_to_cancel['symbol']
+                            console.print(f"[bold yellow]Cancelling order {order_id} for {symbol}...[/bold yellow]")
                             
-                elif action_type == "ORDER":
-                    order_id = int(target)
-                    ord_to_cancel = next((o for o in orders if o['orderId'] == order_id), None)
-                    if ord_to_cancel:
-                        symbol = ord_to_cancel['symbol']
-                        console.print(f"[bold yellow]Cancelling order {order_id} for {symbol}[/bold yellow]")
-                        confirm = click.confirm("Confirm cancelling this order?")
-                        
-                        if confirm:
                             response = trading_client.cancel_order(symbol=symbol, order_id=order_id)
-                            # response usually contains {'clientOrderId': '...', 'cumQty': '0', 'cumQuote': '0', 'executedQty': '0', 'orderId': ..., 'origQty': '...', 'price': '...', 'reduceOnly': False, 'side': '...', 'status': 'CANCELED', ...}
-                            if response and response.get('status') == 'CANCELED':
-                                console.print(f"[bold green]Successfully cancelled order! Response ID: {response.get('orderId')}[/bold green]")
+                            # Any truthy response means the API accepted the cancellation (Algo orders return different payload structures)
+                            if response:
+                                _id = response.get('orderId') or response.get('algoId') or order_id
+                                console.print(f"[bold green]Successfully cancelled order! Response ID: {_id}[/bold green]")
                             else:
-                                console.print("[bold red]Failed to cancel order.[/bold red]")
-                        else:
-                            console.print("[yellow]Cancel cancelled.[/yellow]")
+                                console.print("[bold red]Failed to cancel order. (Or order already executed/cancelled)[/bold red]")
+                
+                balance = trading_client.get_account_balance()
                         
         elif choice == '4':
             InteractivePrompter.display_trade_history(trading_client)

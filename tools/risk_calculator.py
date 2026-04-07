@@ -64,7 +64,8 @@ class RiskCalculator:
 
         # Fees on entry and exit (approximate based on position size)
         order_type_str = order_data.get('order_type', 'MARKET').upper()
-        entry_fee_rate = 0.0002 if order_type_str == 'LIMIT' else self.fee_rate
+        # Enforcing worst-case Taker rate (self.fee_rate) to maintain safe margin validty threshold
+        entry_fee_rate = self.fee_rate
         exit_fee_rate = self.fee_rate # Assuming conditional exit (TAKE_PROFIT_MARKET / STOP_MARKET)
         estimated_trading_fees = (position_size_usdt * entry_fee_rate) + (position_size_usdt * exit_fee_rate)
 

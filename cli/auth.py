@@ -21,8 +21,13 @@ def local_auth():
         return False
         
     password = getpass("Developer Passphrase: ")
-    # Using a static salt for local CLI use-case; could be externalized to .env for max security
-    salt = b'blast_cli_salt'
+    
+    salt_str = os.getenv("BLAST_CLI_SALT")
+    if not salt_str:
+        print("[bold red]CRITICAL SECURITY FAULT: BLAST_CLI_SALT not defined in .env. Halting to preserve Zero-Trust.[/bold red]")
+        raise ValueError("BLAST_CLI_SALT missing. Cannot generate entropy.")
+    salt = salt_str.encode('utf-8')
+    
     key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
     import binascii
     hashed_input = binascii.hexlify(key).decode('utf-8')

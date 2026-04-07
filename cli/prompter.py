@@ -159,23 +159,29 @@ class InteractivePrompter:
             
         choices.append("CANCEL")
         
-        prompt_text = "\n[bold yellow]Select a position to close (POS_<Symbol>) or an order to cancel (ORD_<ID>)[/bold yellow]"
+        prompt_text = "\n[bold yellow]Select positions/orders to close (e.g. POS_BTCUSDT/ORD_123456) or CANCEL[/bold yellow]"
         
-        selection = Prompt.ask(
-            prompt_text,
-            choices=choices,
-            default="CANCEL"
-        )
-        
-        if selection == "CANCEL":
-            return None
+        while True:
+            selection = Prompt.ask(prompt_text, default="CANCEL")
             
-        if selection.startswith("POS_"):
-            return ("POSITION", selection.replace("POS_", ""))
-        elif selection.startswith("ORD_"):
-            return ("ORDER", selection.replace("ORD_", ""))
+            if selection.upper() == "CANCEL":
+                return []
+                
+            tokens = [t.strip() for t in selection.split('/') if t.strip()]
+            invalid_tokens = [t for t in tokens if t not in choices]
             
-        return None
+            if invalid_tokens:
+                console.print(f"[red]Error: Invalid selections found: {', '.join(invalid_tokens)}. Please carefully copy the text from the tables above or type CANCEL.[/red]")
+                continue
+                
+            parsed_selections = []
+            for t in tokens:
+                if t.startswith("POS_"):
+                    parsed_selections.append(("POSITION", t.replace("POS_", "")))
+                elif t.startswith("ORD_"):
+                    parsed_selections.append(("ORDER", t.replace("ORD_", "")))
+            
+            return parsed_selections
 
     @staticmethod
     def display_trade_history(client):

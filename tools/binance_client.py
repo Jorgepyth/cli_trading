@@ -9,25 +9,36 @@ import hashlib
 import urllib.parse
 
 class BinanceTradingClient:
-    def __init__(self, use_testnet=True):
+    def __init__(self, env="TESTNET"):
         """
         Initializes the Binance Client.
+        env can be "TESTNET", "MAINNET", or "SUBACCOUNT".
         Defaults to Testnet for safety.
         """
         load_dotenv()
         
+        env = env.upper()
+        
         # Load appropriate keys based on environment toggle
-        if use_testnet:
+        if env == "TESTNET":
             api_key = os.getenv("BINANCE_TESTNET_API_KEY", "").strip().strip("'").strip('"')
             api_secret = os.getenv("BINANCE_TESTNET_API_SECRET", "").strip().strip("'").strip('"')
-        else:
+            use_testnet = True
+        elif env == "MAINNET":
             api_key = os.getenv("BINANCE_API_KEY", "").strip().strip("'").strip('"')
             api_secret = os.getenv("BINANCE_API_SECRET", "").strip().strip("'").strip('"')
+            use_testnet = False
+        elif env == "SUBACCOUNT":
+            api_key = os.getenv("BINANCE_API_KEY_SUB", "").strip().strip("'").strip('"')
+            api_secret = os.getenv("BINANCE_API_SECRET_SUB", "").strip().strip("'").strip('"')
+            use_testnet = False
+        else:
+            raise ValueError(f"Unknown environment selection: {env}")
             
         if not api_key or not api_secret or api_key == "YOUR_MAINNET_API_KEY":
-            raise ValueError("API Keys are missing from environment variables or still set to defaults.")
+            raise ValueError(f"API Keys are missing for {env} from environment variables.")
 
-        self.client = Client(api_key, api_secret, testnet=use_testnet)
+        self.client = Client(api_key, api_secret, testnet=use_testnet, requests_params={'timeout': 10.0})
         self.exchange_info = None
 
     def get_symbol_filters(self, symbol):
@@ -58,9 +69,9 @@ class BinanceTradingClient:
         step_dec = Decimal(str(step))
         
         if round_type == "truncate":
-            return float(value_dec.quantize(step_dec, rounding=ROUND_DOWN))
+            return format(value_dec.quantize(step_dec, rounding=ROUND_DOWN), 'f')
         else:
-            return float(value_dec.quantize(step_dec, rounding=ROUND_HALF_UP))
+            return format(value_dec.quantize(step_dec, rounding=ROUND_HALF_UP), 'f')
         
     def ping(self):
         """Tests connectivity to the exchange."""
@@ -191,7 +202,7 @@ class BinanceTradingClient:
                     'X-MBX-APIKEY': api_key
                 }
                 
-                http_response = requests.post(endpoint_url, headers=headers, timeout=5.0)
+                http_response = requests.post(endpoint_url, headers=headers, timeout=10.0)
                 response = http_response.json()
                 
                 if http_response.status_code != 200:
@@ -254,3 +265,12 @@ class BinanceTradingClient:
         except BinanceAPIException as e:
             print(f"Error fetching trade history: {e}")
             return []
+
+    def cancel_all_open_orders(self, symbol):
+        """Cancels all open standard and algo orders for a given symbol."""
+        try:
+            self.client.futures_cancel_all_open_orders(symbol=symbol)
+            return True
+        except Exception as e:
+            print(f"Error cancelling all open orders for {symbol}: {e}")
+            return False
